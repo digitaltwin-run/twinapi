@@ -111,10 +111,16 @@ class Vocabulary:
 def _find_pack(pack: str) -> Path:
     override = os.environ.get(f"WELLMANIFEST_{pack.upper()}_STANDARD")
     candidates = [Path(override)] if override else []
-    candidates += [
-        Path.home() / "github" / "wellmanifest" / pack,
-        Path(__file__).resolve().parents[4] / "wellmanifest" / pack,
-    ]
+    candidates.append(Path.home() / "github" / "wellmanifest" / pack)
+    # Repozytorium siostrzane obok naszego. W kontenerze pakiet bywa zainstalowany
+    # płytko, więc sięganie w górę musi znieść brak katalogów — inaczej brak
+    # sąsiada jest awarią zamiast po prostu kolejnym nietrafionym miejscem.
+    here = Path(__file__).resolve()
+    for level in (3, 4):
+        try:
+            candidates.append(here.parents[level] / "wellmanifest" / pack)
+        except IndexError:
+            break
     for candidate in candidates:
         if (candidate / STANDARD_FILES[pack]).is_file():
             return candidate

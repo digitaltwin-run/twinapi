@@ -60,3 +60,16 @@ def test_the_description_is_json_serialisable_for_every_transport() -> None:
 
     assert json.loads(json.dumps(document, ensure_ascii=False))["schema_id"] == \
         "twinapi.vocabulary/v1"
+
+
+def test_a_shallow_install_reports_a_missing_pack_instead_of_crashing(
+        monkeypatch, tmp_path) -> None:
+    """W kontenerze pakiet leży płytko; brak sąsiada to nie jest awaria ścieżki."""
+    import twinapi.vocabulary as module
+
+    monkeypatch.setattr(module.Path, "home", staticmethod(lambda: tmp_path))
+    monkeypatch.delenv("WELLMANIFEST_PCB_STANDARD", raising=False)
+    monkeypatch.setattr(module, "__file__", str(tmp_path / "vocabulary.py"))
+
+    with pytest.raises(VocabularyError, match="nie znaleziono paczki"):
+        module._find_pack("pcb")
