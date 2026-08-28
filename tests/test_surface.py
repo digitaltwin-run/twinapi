@@ -117,3 +117,44 @@ def test_without_a_reporter_the_document_says_nothing_rather_than_guessing() -> 
 
     assert document["state"]["findings"] == []
     assert document["state"]["unrepairable"] == []
+
+
+def test_the_grammar_makes_consent_part_of_the_syntax() -> None:
+    """Schemat odrzuca złą odpowiedź po fakcie; gramatyka nie pozwala jej powstać."""
+    from twinapi import request_grammar
+
+    grammar = request_grammar(_surface().vocabulary,
+                              implemented={"set_track_width", "snap_to_common_grid"})
+
+    consent = next(line for line in grammar.splitlines()
+                   if line.startswith("request-consent ::="))
+    free = next(line for line in grammar.splitlines() if line.startswith("request-free ::="))
+    assert '"approved"' in consent.replace("\\", "")
+    assert "approved" not in free
+    assert '"set_track_width"' in grammar.replace("\\", "")
+
+
+def test_every_rule_the_grammar_uses_is_defined_in_it() -> None:
+    import re
+
+    from twinapi import request_grammar
+
+    grammar = request_grammar(_surface().vocabulary)
+    defined, used = set(), set()
+    for line in grammar.splitlines():
+        if " ::= " not in line:
+            continue
+        name, body = line.split(" ::= ", 1)
+        defined.add(name.strip())
+        body = re.sub(r'"(?:[^"\\]|\\.)*"', " ", body)
+        body = re.sub(r"\[[^\]]*\]", " ", body)
+        used |= set(re.findall(r"[a-z][a-z-]*", body))
+
+    assert used <= defined, f"nieznane reguły: {sorted(used - defined)}"
+
+
+def test_a_vocabulary_with_nothing_implemented_refuses_to_build_a_grammar() -> None:
+    from twinapi import request_grammar
+
+    with pytest.raises(ValueError, match="brak operacji"):
+        request_grammar(_surface().vocabulary, implemented=set())

@@ -64,6 +64,64 @@ def request_schema(vocabulary, *, implemented: set[str] | None = None) -> dict[s
     }
 
 
+Q = '\\"'  # cudzysłów wewnątrz terminala GBNF
+
+
+def request_grammar(vocabulary, *, implemented: set[str] | None = None) -> str:
+    """Ta sama granica co w schemacie, ale wymuszona już przy generowaniu.
+
+    JSON Schema odrzuca złą odpowiedź po fakcie; gramatyka nie pozwala jej
+    powstać. Operacje ruszające miedź, netlistę albo listę elementów mają
+    `approved: true` **w składni**, więc model nie umie ich poprosić bez zgody —
+    nie dlatego, że mu nie wolno, tylko dlatego, że nie ma jak.
+    """
+    allowed = [item for item in vocabulary
+               if implemented is None or item.id in implemented]
+    if not allowed:
+        raise ValueError("brak operacji do zbudowania gramatyki")
+    consent = sorted(item.id for item in allowed if item.requires_approval)
+    free = sorted(item.id for item in allowed if not item.requires_approval)
+
+    def key(name: str) -> str:
+        return '"' + Q + name + Q + '"'
+
+    def alternatives(names: list[str]) -> str:
+        return " | ".join(key(name) for name in names)
+
+    def head(rule: str, operation_rule: str, approved: bool) -> str:
+        parts = ['"{" ws', key("operation"), 'ws ":" ws', operation_rule,
+                 'ws "," ws', key("input"), 'ws ":" ws object',
+                 'ws "," ws', key("why"), 'ws ":" ws string']
+        if approved:
+            parts += ['ws "," ws', key("approved"), 'ws ":" ws "true"']
+        parts.append('ws "}"')
+        return f"{rule} ::= " + " ".join(parts)
+
+    lines = ["# Żądanie zmiany ograniczone do słownika standardu.",
+             "# Zgoda nie jest regułą w podpowiedzi — jest częścią składni."]
+    roots = (["request-free"] if free else []) + (["request-consent"] if consent else [])
+    lines.append("root ::= " + " | ".join(roots))
+    if free:
+        lines.append(head("request-free", "operation-free", approved=False))
+        lines.append("operation-free ::= " + alternatives(free))
+    if consent:
+        lines.append(head("request-consent", "operation-consent", approved=True))
+        lines.append("operation-consent ::= " + alternatives(consent))
+    lines += [
+        'object ::= "{" ws (member (ws "," ws member)*)? ws "}"',
+        "member ::= string ws \":\" ws value",
+        'array ::= "[" ws (value (ws "," ws value)*)? ws "]"',
+        'value ::= object | array | string | integer | "true" | "false" | "null"',
+        'string ::= "' + Q + '" char* "' + Q + '"',
+        'char ::= [^"\\\\] | "\\\\" ["\\\\/bfnrt]',
+        "# Wymiary podawaj jako liczby całkowite w mniejszej jednostce: hasz kanoniczny",
+        "# planu nie ma jednoznacznego zapisu dla liczb zmiennoprzecinkowych.",
+        'integer ::= "-"? ("0" | [1-9] [0-9]*)',
+        "ws ::= [ \\t\\n]*",
+    ]
+    return "\n".join(lines) + "\n"
+
+
 def build(surface, *, history_limit: int = 10) -> dict[str, Any]:
     """Stan, słownik, granice i pamięć projektu w jednym dokumencie."""
     description = surface.describe()
@@ -99,6 +157,7 @@ def build(surface, *, history_limit: int = 10) -> dict[str, Any]:
             "chain": history.get("chain", []),
         },
         "request_schema": request_schema(surface.vocabulary, implemented=implemented),
+        "request_grammar": request_grammar(surface.vocabulary, implemented=implemented),
         "how_to_answer": (
             "Odpowiedz jednym obiektem zgodnym z `request_schema`. Wybierz operację, "
             "która zamyka naruszenie z `state.findings` — pole `repairs` przy każdym "
