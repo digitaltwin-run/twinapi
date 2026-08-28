@@ -140,3 +140,29 @@ def test_the_rest_router_exposes_the_same_surface() -> None:
                        json={"input": PAYLOAD, "approved": True})
     assert done.json()["receipt"]["state"] == "succeeded"
     assert client.get("/api/twinapi/operations/nie_ma_takiej").status_code == 404
+
+
+def test_a2a_rides_the_same_router_and_the_card_does_not_depend_on_the_request() -> None:
+    """Drugi agent zapisuje kartę i wraca później — musi dostać to samo."""
+    pytest.importorskip("fastapi")
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from twinapi.adapters import rest
+
+    app = FastAPI()
+    app.include_router(rest.build_router(_surface(), base_url="https://example.invalid/x"))
+    client = TestClient(app)
+
+    card = client.get("/api/twinapi/a2a/card").json()
+    assert card["url"] == "https://example.invalid/x/a2a"
+    assert {skill["id"] for skill in card["skills"]} == {"set_track_width", "snap_to_common_grid"}
+
+    planned = client.post("/api/twinapi/a2a/task",
+                          json={"id": "t", "action": "plan",
+                                "operation": "set_track_width", "input": PAYLOAD})
+    assert planned.json()["state"] == "input-required"
+
+    refused = client.post("/api/twinapi/a2a/task",
+                          json={"id": "t", "action": "run",
+                                "operation": "set_track_width", "input": PAYLOAD})
+    assert refused.status_code == 409

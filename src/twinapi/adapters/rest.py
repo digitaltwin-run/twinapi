@@ -10,9 +10,11 @@ from typing import Any
 
 from ..surface import Surface, SurfaceError, receipt_of
 from ..vocabulary import VocabularyError
+from . import a2a as _a2a
 
 
-def build_router(surface: Surface, prefix: str = "/api/twinapi"):
+def build_router(surface: Surface, prefix: str = "/api/twinapi",
+                 base_url: str | None = None):
     """Router FastAPI wygenerowany ze słownika; wymaga zainstalowanego fastapi."""
     try:
         from fastapi import APIRouter, Body, HTTPException
@@ -64,5 +66,23 @@ def build_router(surface: Surface, prefix: str = "/api/twinapi"):
             # dopuszczają. Pokwitowanie porażki jedzie w treści, żeby nie ginęło.
             raise HTTPException(409, {"error": str(exc), "receipt": receipt}) from exc
         return JSONResponse(result)
+
+    # A2A jedzie tym samym routerem, bo to ten sam serwer i ta sama powierzchnia.
+    # Karta agenta wymienia wyłącznie umiejętności, które projekt naprawdę ma;
+    # zadanie idzie w dwóch krokach — plan, potem wykonanie — tak samo jak dla
+    # człowieka w powłoce.
+    # Adres w karcie jest parametrem, nie odczytem z żądania: karta ma być taka
+    # sama niezależnie od tego, przez jaki proxy przyszło pytanie, bo drugi agent
+    # zapisuje ją sobie i wraca później.
+    @router.get("/a2a/card")
+    def card() -> JSONResponse:
+        return JSONResponse(_a2a.agent_card(
+            surface, name=f"twinapi:{surface.target}",
+            url=(base_url or prefix) + "/a2a"))
+
+    @router.post("/a2a/task")
+    def task(body: dict[str, Any] = json_body) -> JSONResponse:
+        answer = _a2a.handle_task(surface, body)
+        return JSONResponse(answer, status_code=200 if answer["state"] != "failed" else 409)
 
     return router
