@@ -14,6 +14,10 @@ def test_the_vocabulary_comes_from_the_standard_packs() -> None:
 
     assert len(vocabulary) >= 20
     assert {pack for pack, _version in vocabulary.packs} == {"wellmanifest/pcb", "wellmanifest/sch"}
+    assert {pack for pack, _sha256 in vocabulary.pack_sha256} == {
+        "wellmanifest/pcb", "wellmanifest/sch",
+    }
+    assert all(len(sha256) == 64 for _pack, sha256 in vocabulary.pack_sha256)
 
 
 def test_an_operation_outside_the_vocabulary_is_an_error_not_an_extension() -> None:
@@ -60,6 +64,7 @@ def test_the_description_is_json_serialisable_for_every_transport() -> None:
 
     assert json.loads(json.dumps(document, ensure_ascii=False))["schema_id"] == \
         "twinapi.vocabulary/v1"
+    assert all(len(pack["sha256"]) == 64 for pack in document["packs"])
 
 
 def test_a_shallow_install_reports_a_missing_pack_instead_of_crashing(

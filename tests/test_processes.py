@@ -91,6 +91,16 @@ def test_a_manifest_with_the_wrong_schema_is_refused(tmp_path) -> None:
 def test_the_routing_table_is_showable_in_every_transport() -> None:
     table = routing(_document(), load_vocabulary("pcb", "sch"), "panel9")
 
+    assert table["schema_id"] == "twinapi.routing/v1"
+    assert table["registry_schema_id"] == "twinapi.processes/v1"
+    assert len(table["registry_sha256"]) == len(table["routing_sha256"]) == 64
     assert table["processes"][0]["operation"] == "trim_silkscreen"
+    assert table["processes"][0]["process_ref"].startswith("poa://")
+    assert table["processes"][0]["capability_ref"].startswith("capability://")
+    assert table["processes"][0]["process_uri"] == table["processes"][0]["uri"]
+    assert table["processes"][0]["adapter_ref"].startswith("adapter://")
     assert table["gates"] == ["drc_no_regression"]
+    assert table["verification"][0]["capability_ref"].endswith(
+        "/gate/drc-no-regression/v1"
+    )
     assert json.loads(json.dumps(table, ensure_ascii=False))["target"] == "panel9"

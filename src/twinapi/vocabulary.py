@@ -8,6 +8,7 @@ ma jej skąd wziąć.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from dataclasses import dataclass
@@ -72,6 +73,7 @@ class Vocabulary:
 
     operations: tuple[Operation, ...]
     packs: tuple[tuple[str, str], ...]  # (id paczki, wersja)
+    pack_sha256: tuple[tuple[str, str], ...] = ()  # (id paczki, SHA-256 dokładnych bajtów)
 
     def __post_init__(self) -> None:
         seen: dict[str, str] = {}
@@ -136,11 +138,14 @@ def load_vocabulary(*packs: str, roots: dict[str, Path] | None = None) -> Vocabu
         packs = tuple(STANDARD_FILES)
     operations: list[Operation] = []
     versions: list[tuple[str, str]] = []
+    digests: list[tuple[str, str]] = []
     for pack in packs:
         if pack not in STANDARD_FILES:
             raise VocabularyError(f"nieznana paczka standardu {pack!r}")
         root = (roots or {}).get(pack) or _find_pack(pack)
-        document = json.loads((root / STANDARD_FILES[pack]).read_text(encoding="utf-8"))
+        standard_path = root / STANDARD_FILES[pack]
+        standard_bytes = standard_path.read_bytes()
+        document = json.loads(standard_bytes)
         declared = document.get("operations")
         if not declared:
             raise VocabularyError(
@@ -148,6 +153,7 @@ def load_vocabulary(*packs: str, roots: dict[str, Path] | None = None) -> Vocabu
                 "potrzebna paczka ze słownikiem zmian"
             )
         versions.append((document["id"], document["version"]))
+        digests.append((document["id"], hashlib.sha256(standard_bytes).hexdigest()))
         for item in declared:
             operations.append(Operation(
                 id=item["id"], scope=item["scope"], entity=item["entity"],
@@ -155,14 +161,22 @@ def load_vocabulary(*packs: str, roots: dict[str, Path] | None = None) -> Vocabu
                 verify=tuple(item["verify"]), reversible=bool(item["reversible"]),
                 why=item["why"], pack=document["id"],
             ))
-    return Vocabulary(tuple(operations), tuple(versions))
+    return Vocabulary(tuple(operations), tuple(versions), tuple(digests))
 
 
 def describe(vocabulary: Vocabulary) -> dict[str, Any]:
     """Słownik w postaci, którą da się oddać każdemu z czterech transportów."""
+    digests = dict(vocabulary.pack_sha256)
     return {
         "schema_id": "twinapi.vocabulary/v1",
-        "packs": [{"id": pack, "version": version} for pack, version in vocabulary.packs],
+        "packs": [
+            {
+                "id": pack,
+                "version": version,
+                **({"sha256": digests[pack]} if pack in digests else {}),
+            }
+            for pack, version in vocabulary.packs
+        ],
         "operations": [
             {
                 "id": operation.id,

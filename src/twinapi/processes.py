@@ -22,11 +22,20 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .poa import process_uri
+from .poa import (
+    capability_ref,
+    digest,
+    process_ref,
+    process_uri,
+    target_ref,
+    verification_ref,
+)
 from .registry import Registry
 from .vocabulary import Vocabulary, VocabularyError
 
 SCHEMA = "twinapi.processes/v1"
+ROUTING_SCHEMA = "twinapi.routing/v1"
+HANDLER_ADAPTER_REF = "adapter://digitaltwin.run/twinapi/python-handler/v1"
 
 
 class ProcessError(RuntimeError):
@@ -115,14 +124,37 @@ def bind(vocabulary: Vocabulary, document: dict[str, Any], *, target: str,
 
 
 def routing(document: dict[str, Any], vocabulary: Vocabulary, target: str) -> dict[str, Any]:
-    """Tablica routingu w postaci, którą da się pokazać w każdym transporcie."""
-    return {
-        "schema_id": SCHEMA,
+    """Tablica routingu z tymi samymi referencjami, które trafią do planu POA."""
+    resolved = bindings(document, vocabulary, target)
+    projection = {
+        "schema_id": ROUTING_SCHEMA,
+        "registry_schema_id": SCHEMA,
+        "registry_sha256": digest(document),
         "target": target,
+        "target_ref": target_ref(target),
         "processes": [
-            {"uri": binding.uri, "operation": binding.operation, "handler": binding.handler}
-            for binding in bindings(document, vocabulary, target)
+            {
+                "uri": binding.uri,
+                "process_uri": binding.uri,
+                "process_ref": process_ref(vocabulary.get(binding.operation)),
+                "capability_ref": capability_ref(vocabulary.get(binding.operation)),
+                "adapter_ref": HANDLER_ADAPTER_REF,
+                "operation": binding.operation,
+                "handler": binding.handler,
+            }
+            for binding in resolved
         ],
         "gates": [entry.get("name") for entry in document.get("gates") or []],
+        "verification": [
+            {
+                "name": str(entry.get("name")),
+                **verification_ref(str(entry.get("name"))),
+                "adapter_ref": HANDLER_ADAPTER_REF,
+                "handler": entry.get("handler"),
+            }
+            for entry in document.get("gates") or []
+        ],
         "promoter": document.get("promoter"),
     }
+    projection["routing_sha256"] = digest(projection)
+    return projection

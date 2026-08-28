@@ -71,7 +71,7 @@ def target_ref(target: str) -> str:
     return f"target://{DOMAIN}/{target}"
 
 
-def _verification(name: str) -> dict[str, str]:
+def verification_ref(name: str) -> dict[str, str]:
     slug = name.replace("_", "-")
     return {
         "capability_ref": f"capability://{DOMAIN}/gate/{slug}/v1",
@@ -101,7 +101,7 @@ def build_process(operation: Operation) -> dict[str, Any]:
             "timeout_seconds": 900,
             "max_attempts": 1,
             "idempotency": "required",
-            "verification": [_verification(name) for name in operation.verify],
+            "verification": [verification_ref(name) for name in operation.verify],
         }],
     }
 
@@ -132,7 +132,7 @@ def build_plan(operation: Operation, payload: dict[str, Any], *, target: str,
         "timeout_seconds": 900,
         "max_attempts": 1,
         "idempotency_key": request_sha256[:32],
-        "verification": [_verification(name) for name in operation.verify],
+        "verification": [verification_ref(name) for name in operation.verify],
     }
     plan = {
         "schema": "poa.plan/v1",
