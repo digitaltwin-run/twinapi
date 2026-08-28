@@ -32,15 +32,21 @@ def build_parser(surface: Surface, prog: str = "twinapi") -> argparse.ArgumentPa
     history.add_argument("--source")
 
     for verb, help_text in (("plan", "Pokaż plan, nie zmieniając niczego."),
-                            ("run", "Wykonaj operację i wypisz pokwitowanie.")):
+                            ("run", "Wykonaj operację i wypisz pokwitowanie."),
+                            ("apply",
+                             "Wykonaj, sprawdź bramkami i opcjonalnie wpisz do projektu.")):
         command = sub.add_parser(verb, help=help_text)
         command.add_argument("operation")
         command.add_argument("--input", default="{}",
                              help="Wejście operacji jako JSON albo @plik.")
-        if verb == "run":
+        if verb in {"run", "apply"}:
             command.add_argument("--approve", action="store_true",
                                  help="Zgoda na zmianę wymagającą akceptacji.")
+        if verb == "run":
             command.add_argument("--plan", help="Plik z planem, którym wykonanie ma być związane.")
+        if verb == "apply":
+            command.add_argument("--promote", action="store_true",
+                                 help="Wpisz kandydata do projektu, gdy wszystkie bramki przejdą.")
     return parser
 
 
@@ -107,6 +113,31 @@ def main(surface: Surface, argv: list[str] | None = None, prog: str = "twinapi")
     if args.command == "plan":
         print(json.dumps(surface.plan(args.operation, payload), ensure_ascii=False, indent=2))
         return 0
+
+    if args.command == "apply":
+        try:
+            result = surface.apply(args.operation, payload, approved=args.approve,
+                                   promote=args.promote)
+        except SurfaceError as exc:
+            print(f"twinapi: {exc}", file=sys.stderr)
+            return 1
+        if as_json:
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0
+        verification = result["verification"]
+        print(f"{result['operation']}: {result['receipt']['state']}")
+        for key, value in result["output"].items():
+            if key == "evidence" and isinstance(value, list):
+                print(f"  dowodów: {len(value)}")
+                continue
+            print(f"  {key}: {value}")
+        for name, gate in verification["gates"].items():
+            codes = ", ".join(gate.get("codes") or []) or "—"
+            print(f"  bramka {name:24} {gate.get('status', '?'):12} {codes}")
+        print(f"weryfikacja: {verification['status']}"
+              + (f" ({', '.join(verification['blocking'])})" if verification["blocking"] else ""))
+        print("wpisane do projektu" if result["promoted"] else "kandydat czeka na decyzję")
+        return 0 if verification["status"] == "passed" else 1
 
     plan = None
     if getattr(args, "plan", None):

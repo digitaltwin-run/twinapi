@@ -84,6 +84,39 @@ class Surface:
         operation = self.vocabulary.get(operation_id)
         return build_plan(operation, payload or {}, target=self.target, subject=self.subject)
 
+    # — weryfikacja —
+
+    def verify(self, operation_id: str, context: dict[str, Any]) -> dict[str, Any]:
+        """Uruchamia bramki, które ta operacja deklaruje — po nazwie, nie z kodu.
+
+        Operacja mówi, co musi przejść; rejestr mówi, kto to umie policzyć.
+        Bramka zadeklarowana, a niezarejestrowana, jest **brakiem kontroli**
+        i tak się liczy: `unavailable` blokuje, bo cisza wygląda tak samo jak
+        zaliczenie, a nie jest tym samym.
+        """
+        operation = self.vocabulary.get(operation_id)
+        results: dict[str, Any] = {}
+        for name in operation.verify:
+            gate = self.registry.gate(name)
+            if gate is None:
+                results[name] = {"status": "unavailable", "blocking": True,
+                                 "codes": [f"GATE_NOT_REGISTERED:{name}"]}
+                continue
+            try:
+                results[name] = gate(context)
+            except Exception as exc:  # noqa: BLE001 - awaria bramki to brak kontroli
+                results[name] = {"status": "unavailable", "blocking": True,
+                                 "codes": [f"GATE_FAILED:{name}"], "message": str(exc)}
+        blocking = sorted(name for name, item in results.items() if item.get("blocking"))
+        return {
+            "schema_id": "twinapi.verification/v1",
+            "operation": operation.id,
+            "declared": list(operation.verify),
+            "gates": results,
+            "blocking": blocking,
+            "status": "blocked" if blocking else "passed",
+        }
+
     # — wykonanie —
 
     def execute(self, operation_id: str, payload: dict[str, Any] | None = None, *,
@@ -138,6 +171,52 @@ class Surface:
             "output": output,
             "receipt": receipt,
         }
+
+    def apply(self, operation_id: str, payload: dict[str, Any] | None = None, *,
+              approved: bool = False, promote: bool = False) -> dict[str, Any]:
+        """Pełny cykl: plan → kandydat → bramki → (opcjonalnie) wpisanie do projektu.
+
+        Automatyczne przyjęcie zmiany jest bezpieczne dokładnie wtedy, gdy
+        bramki, które operacja deklaruje, są **zarejestrowane i przeszły**.
+        Bramka zadeklarowana, a nieumiana, blokuje — bo „nie sprawdziłem"
+        i „sprawdziłem, jest dobrze" muszą się różnić.
+        """
+        result = self.execute(operation_id, payload, approved=approved)
+        context = {"operation": operation_id, "target": self.target,
+                   "output": result["output"]}
+        verification = self.verify(operation_id, context)
+        result["verification"] = verification
+        correlation = result["plan"]["request_sha256"][:16]
+        operation = self.vocabulary.get(operation_id)
+        self._record(operation, "eda.validation_completed",
+                     "ACCEPTED" if verification["status"] == "passed" else "REJECTED",
+                     correlation, result["plan"]["request_sha256"],
+                     severity="INFO" if verification["status"] == "passed" else "WARNING",
+                     subject_state=verification["status"])
+        result["promoted"] = False
+        if not promote:
+            return result
+        if verification["status"] != "passed":
+            raise SurfaceError(
+                f"{operation_id}: bramki {', '.join(verification['blocking'])} nie przeszły — "
+                "zmiana nie zostanie wpisana do projektu"
+            )
+        if self.registry.promoter is None:
+            raise SurfaceError(
+                f"{operation_id}: ten projekt jest propose-only — nikt nie zarejestrował "
+                "kodu wpisującego kandydata do projektu"
+            )
+        promotion = self.registry.promoter(result)
+        result["promoted"] = True
+        result["promotion"] = promotion
+        self._record(operation, "eda.change_accepted", "ACCEPTED", correlation,
+                     result["plan"]["request_sha256"],
+                     evidence=list(promotion.get("evidence") or []),
+                     subject_state=str(promotion.get("revision") or ""))
+        self._record(operation, "eda.revision_promoted", "ACCEPTED", correlation,
+                     result["plan"]["request_sha256"],
+                     evidence=list(promotion.get("evidence") or []))
+        return result
 
     def _record(self, operation: Operation, event_type: str, outcome: str,
                 correlation: str, input_hash: str, *, severity: str = "INFO",
