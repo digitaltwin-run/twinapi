@@ -17,6 +17,7 @@ który transport przyszło żądanie.
 """
 from .journal import Journal, JournalError, evidence_for
 from .poa import PlanError, build_plan, build_process, canonical, digest
+from .processes import ProcessError, bind, load_processes, routing
 from .registry import Handler, Registry
 from .surface import Surface, SurfaceError
 from .vocabulary import Operation, Vocabulary, VocabularyError, load_vocabulary
@@ -27,17 +28,21 @@ __all__ = [
     "JournalError",
     "Operation",
     "PlanError",
+    "ProcessError",
     "Registry",
     "Surface",
     "SurfaceError",
     "Vocabulary",
     "VocabularyError",
+    "bind",
     "build_plan",
     "build_process",
     "canonical",
     "digest",
     "evidence_for",
+    "load_processes",
     "load_vocabulary",
+    "routing",
 ]
 
 __version__ = "0.1.0"
