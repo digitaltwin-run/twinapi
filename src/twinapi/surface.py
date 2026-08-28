@@ -154,10 +154,14 @@ class Surface:
                 started_at=started, completed_at=completed,
                 error_code=type(exc).__name__,
             )
+            # `code` w kontrakcie logów to kod diagnostyczny (WIELKIE-LITERY
+            # z myślnikiem), a nie nazwa klasy wyjątku Pythona. Typ wyjątku
+            # zostaje w pokwitowaniu, gdzie wolno mu być dowolnym łańcuchem.
             self._record(operation, "eda.change_plan_failed", "FAILED", correlation,
                          bound["request_sha256"], severity="ERROR",
-                         code=type(exc).__name__,
-                         receipt_ref=f"sha256:{receipt['receipt_hash']}")
+                         code="TWINAPI-HANDLER-FAILED",
+                         receipt_ref=f"receipt://{receipt['receipt_hash']}",
+                         subject_state="failed")
             raise SurfaceError(f"{operation.id}: {exc}") from _WithReceipt(receipt, exc)
         completed = datetime.now(UTC)
         receipt = build_receipt(
@@ -165,11 +169,14 @@ class Surface:
             started_at=started, completed_at=completed,
             verified=bool(output.get("verified")),
         )
+        # `subjectState` to **nazwa stanu**, nie identyfikator rewizji: kontrakt
+        # logów wymaga krótkiego snake_case. Rewizja jest w `evidence`, gdzie
+        # niesie ze sobą sumy plików, więc nic się nie gubi.
         self._record(operation, "eda.candidate_created", "SUCCEEDED", correlation,
                      bound["request_sha256"],
                      evidence=list(output.get("evidence") or []),
-                     receipt_ref=f"sha256:{receipt['receipt_hash']}",
-                     subject_state=str(output.get("candidate") or ""))
+                     receipt_ref=f"receipt://{receipt['receipt_hash']}",
+                     subject_state="created" if output.get("changed", True) else "unchanged")
         return {
             "schema_id": "twinapi.result/v1",
             "operation": operation.id,
@@ -198,7 +205,7 @@ class Surface:
                      "ACCEPTED" if verification["status"] == "passed" else "REJECTED",
                      correlation, result["plan"]["request_sha256"],
                      severity="INFO" if verification["status"] == "passed" else "WARNING",
-                     subject_state=verification["status"])
+                     subject_state=verification["status"])  # passed | blocked
         result["promoted"] = False
         if not promote:
             return result
@@ -218,10 +225,11 @@ class Surface:
         self._record(operation, "eda.change_accepted", "ACCEPTED", correlation,
                      result["plan"]["request_sha256"],
                      evidence=list(promotion.get("evidence") or []),
-                     subject_state=str(promotion.get("revision") or ""))
+                     subject_state="accepted")
         self._record(operation, "eda.revision_promoted", "ACCEPTED", correlation,
                      result["plan"]["request_sha256"],
-                     evidence=list(promotion.get("evidence") or []))
+                     evidence=list(promotion.get("evidence") or []),
+                     subject_state="promoted")
         return result
 
     def _record(self, operation: Operation, event_type: str, outcome: str,

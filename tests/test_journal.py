@@ -42,7 +42,8 @@ def test_an_execution_leaves_a_verifiable_trace(tmp_path) -> None:
         ["eda.change_planned", "eda.candidate_created"]
     assert surface.journal.verify() == []
     assert entries[-1]["evidence"][0]["path"] == "pcb/x.kicad_pcb"
-    assert entries[-1]["receiptRef"].startswith("sha256:")
+    assert entries[-1]["receiptRef"].startswith("receipt://")
+    assert entries[-1]["subjectState"] == "created"
 
 
 def test_a_failure_is_recorded_too_with_its_code(tmp_path) -> None:
@@ -55,7 +56,7 @@ def test_a_failure_is_recorded_too_with_its_code(tmp_path) -> None:
     entries = [json.loads(line) for line in surface.journal.path.read_text().splitlines()]
     assert entries[-1]["eventType"] == "eda.change_plan_failed"
     assert entries[-1]["outcome"] == "FAILED"
-    assert entries[-1]["code"] == "ValueError"
+    assert entries[-1]["code"] == "TWINAPI-HANDLER-FAILED"
     assert entries[-1]["severity"] == "ERROR"
 
 
@@ -125,3 +126,44 @@ def test_a_broken_journal_does_not_break_the_change(tmp_path) -> None:
     result = surface.execute("trim_silkscreen", {})
 
     assert result["receipt"]["state"] == "succeeded"
+
+
+def test_a_state_that_is_not_a_state_name_is_refused(tmp_path) -> None:
+    """`subjectState` to nazwa stanu, nie identyfikator rewizji.
+
+    Pierwsza wersja wpisywała tam `20260828T065637Z-pcb-cf89879bb809` i napisała
+    29 wpisów łamiących kontrakt, zanim ktokolwiek porównał je ze schematem.
+    """
+    journal = _journal(tmp_path)
+
+    with pytest.raises(JournalError, match="subjectState"):
+        journal.append(event_type="eda.candidate_created", outcome="SUCCEEDED",
+                       correlation_id="abc", input_hash="0" * 64,
+                       subject_state="20260828T065637Z-pcb-cf89879bb809")
+
+
+def test_a_receipt_reference_must_use_its_own_scheme(tmp_path) -> None:
+    journal = _journal(tmp_path)
+
+    with pytest.raises(JournalError, match="receiptRef"):
+        journal.append(event_type="eda.candidate_created", outcome="SUCCEEDED",
+                       correlation_id="abc", input_hash="0" * 64,
+                       receipt_ref="sha256:" + "a" * 64)
+
+
+def test_a_python_exception_name_is_not_a_diagnostic_code(tmp_path) -> None:
+    """Kod diagnostyczny to WIELKIE-LITERY z myślnikiem, nie `ValueError`."""
+    journal = _journal(tmp_path)
+
+    with pytest.raises(JournalError, match="code"):
+        journal.append(event_type="eda.change_plan_failed", outcome="FAILED",
+                       severity="ERROR", correlation_id="abc", input_hash="0" * 64,
+                       code="ValueError")
+
+
+def test_a_hash_that_is_not_a_hash_is_refused(tmp_path) -> None:
+    journal = _journal(tmp_path)
+
+    with pytest.raises(JournalError, match="inputHash"):
+        journal.append(event_type="eda.pcb_analyzed", outcome="OBSERVED",
+                       correlation_id="abc", input_hash="nie-hasz")

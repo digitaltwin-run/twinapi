@@ -26,6 +26,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -35,6 +36,23 @@ SCHEMA = "wellmanifest.logs/event/v1"
 SEVERITIES = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
 OUTCOMES = ("OBSERVED", "ACCEPTED", "REJECTED", "SUCCEEDED", "FAILED")
 MODES = ("PLAN", "APPLY")
+# Wzorce z `wellmanifest/logs` — `contracts/logs.contract.json`, `schemas.event`.
+# Trzymamy je tutaj jako wyrażenia, a nie jako zależność od paczki: dziennik ma
+# odmawiać wpisu niezgodnego także tam, gdzie paczki nie ma. Pełną walidację
+# schematem robi osobna kontrola, gdy paczka jest dostępna.
+PATTERNS = {
+    "eventId": re.compile(r"^event:[A-Za-z0-9._:-]+$"),
+    "eventType": re.compile(r"^[a-z][a-z0-9]*(?:[._][a-z][a-z0-9]*)*$"),
+    "source": re.compile(r"^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9_]*)*$"),
+    "producer": re.compile(r"^(human|agent|service):[A-Za-z0-9._:-]+$"),
+    "subjectRef": re.compile(r"^[a-z][a-z0-9+.-]*:[A-Za-z0-9._:/-]+$"),
+    "subjectState": re.compile(r"^[a-z][a-z0-9_]{0,31}$"),
+    "receiptRef": re.compile(r"^receipt://[A-Za-z0-9._:/-]+$"),
+    "code": re.compile(r"^[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+$"),
+    "correlationId": re.compile(r"^[A-Za-z0-9._:-]{1,128}$"),
+    "causationId": re.compile(r"^[A-Za-z0-9._:-]{1,128}$"),
+    "sha256": re.compile(r"^[a-f0-9]{64}$"),
+}
 # Pierwszy wpis nie ma poprzednika, ale musi mieć czym się zakotwiczyć.
 # Strumień, do którego dopisujemy, używa hasza zerowego — przejmujemy tę
 # konwencję zamiast narzucać własną, żeby świeży strumień wyglądał jak ten,
@@ -53,6 +71,33 @@ def _canonical(value: Any) -> bytes:
 
 def digest_of(value: Any) -> str:
     return hashlib.sha256(_canonical(value)).hexdigest()
+
+
+def _check(entry: dict[str, Any]) -> None:
+    """Odmawia wpisu, którego kontrakt logów by nie przyjął.
+
+    Strumień jest dopisywalny i tylko dopisywalny, więc wpis niezgodny zostaje
+    w nim na zawsze — a walidacja po fakcie znajduje go dopiero przy audycie.
+    Pierwsza wersja tego dziennika napisała 29 takich wpisów, zanim ktokolwiek
+    porównał je ze schematem: `subjectState` niosło identyfikator rewizji zamiast
+    nazwy stanu, `receiptRef` miało schemat `sha256:` zamiast `receipt://`,
+    a `code` mogło nieść nazwę wyjątku Pythona.
+    """
+    for name, pattern in PATTERNS.items():
+        if name == "sha256":
+            continue
+        value = entry.get(name)
+        if value is None:
+            continue
+        if not pattern.match(str(value)):
+            raise JournalError(
+                f"pole {name}={value!r} nie pasuje do kontraktu wellmanifest/logs "
+                f"({pattern.pattern})"
+            )
+    for name in ("inputHash", "previousHash"):
+        value = entry.get(name)
+        if value is not None and not PATTERNS["sha256"].match(str(value)):
+            raise JournalError(f"pole {name} nie jest skrótem sha256")
 
 
 def evidence_for(paths: list[Path | str], root: Path | None = None) -> list[dict[str, str]]:
@@ -138,6 +183,7 @@ class Journal:
                     "rawOutputIncluded": False,
                     "secretMaterialIncluded": False,
                 }
+                _check(entry)
                 entry["eventHash"] = digest_of(entry)
                 handle.seek(0, os.SEEK_END)
                 handle.write(json.dumps(entry, ensure_ascii=False, sort_keys=True) + "\n")
