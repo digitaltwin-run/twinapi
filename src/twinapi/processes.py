@@ -31,7 +31,7 @@ from .poa import (
     verification_ref,
 )
 from .registry import Registry
-from .vocabulary import Vocabulary, VocabularyError
+from .vocabulary import Vocabulary, VocabularyError, describe
 
 SCHEMA = "twinapi.processes/v1"
 ROUTING_SCHEMA = "twinapi.routing/v1"
@@ -132,6 +132,7 @@ def routing(document: dict[str, Any], vocabulary: Vocabulary, target: str) -> di
         "registry_sha256": digest(document),
         "target": target,
         "target_ref": target_ref(target),
+        "standards": describe(vocabulary)["packs"],
         "processes": [
             {
                 "uri": binding.uri,

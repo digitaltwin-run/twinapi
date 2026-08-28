@@ -94,6 +94,7 @@ def test_the_routing_table_is_showable_in_every_transport() -> None:
     assert table["schema_id"] == "twinapi.routing/v1"
     assert table["registry_schema_id"] == "twinapi.processes/v1"
     assert len(table["registry_sha256"]) == len(table["routing_sha256"]) == 64
+    assert all(len(pack["sha256"]) == 64 for pack in table["standards"])
     assert table["processes"][0]["operation"] == "trim_silkscreen"
     assert table["processes"][0]["process_ref"].startswith("poa://")
     assert table["processes"][0]["capability_ref"].startswith("capability://")
