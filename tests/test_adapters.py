@@ -147,6 +147,7 @@ def test_a2a_rides_the_same_router_and_the_card_does_not_depend_on_the_request()
     pytest.importorskip("fastapi")
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
+
     from twinapi.adapters import rest
 
     app = FastAPI()
