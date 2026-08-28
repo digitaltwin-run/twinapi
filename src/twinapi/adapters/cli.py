@@ -26,6 +26,11 @@ def build_parser(surface: Surface, prog: str = "twinapi") -> argparse.ArgumentPa
     repairs = sub.add_parser("repairs", help="Czym wolno zamknąć to naruszenie reguły.")
     repairs.add_argument("rule")
 
+    history = sub.add_parser("history", help="Historia zmian projektu i spójność łańcucha.")
+    history.add_argument("--limit", type=int, default=15)
+    history.add_argument("--event-type")
+    history.add_argument("--source")
+
     for verb, help_text in (("plan", "Pokaż plan, nie zmieniając niczego."),
                             ("run", "Wykonaj operację i wypisz pokwitowanie.")):
         command = sub.add_parser(verb, help=help_text)
@@ -81,6 +86,23 @@ def main(surface: Surface, argv: list[str] | None = None, prog: str = "twinapi")
             print(f"  {mark} {entry['operation']}: {entry['why']}")
         return 0
 
+    if args.command == "history":
+        document = surface.history(args.limit, event_type=args.event_type, source=args.source)
+        if as_json:
+            print(json.dumps(document, ensure_ascii=False, indent=2))
+            return 0
+        if not document["available"]:
+            print(document["chain"][0])
+            return 1
+        for entry in document["entries"]:
+            evidence = len(entry.get("evidence") or [])
+            print(f"  #{entry['sequence']:>4} {entry['occurredAt'][:19]} "
+                  f"{entry['eventType']:28} {entry['outcome']:10} "
+                  f"{entry.get('source', ''):10} dowodów={evidence}")
+        problems = document["chain"]
+        print(f"łańcuch: {'spójny' if not problems else problems[0]}")
+        return 1 if problems else 0
+
     payload = _payload(args.input)
     if args.command == "plan":
         print(json.dumps(surface.plan(args.operation, payload), ensure_ascii=False, indent=2))
@@ -103,6 +125,12 @@ def main(surface: Surface, argv: list[str] | None = None, prog: str = "twinapi")
     else:
         print(f"{result['operation']}: {result['receipt']['state']}")
         for key, value in result["output"].items():
+            # Dowody to lista plików z sumami; w trybie tekstowym liczy się ich
+            # liczba, a nie sześć linii skrótów, które i tak trzeba porównywać
+            # maszynowo. Pełna lista jest w `--format json`.
+            if key == "evidence" and isinstance(value, list):
+                print(f"  dowodów: {len(value)}")
+                continue
             print(f"  {key}: {value}")
         print(f"pokwitowanie: sha256:{result['receipt']['receipt_hash']}")
     return 0

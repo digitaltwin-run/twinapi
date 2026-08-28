@@ -142,6 +142,30 @@ def test_the_rest_router_exposes_the_same_surface() -> None:
     assert client.get("/api/twinapi/operations/nie_ma_takiej").status_code == 404
 
 
+def test_the_history_is_readable_over_rest_without_touching_the_stream(tmp_path) -> None:
+    pytest.importorskip("fastapi")
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from twinapi import Journal
+    from twinapi.adapters import rest
+
+    surface = _surface()
+    surface.journal = Journal(tmp_path / "eda.jsonl")
+    surface.execute("snap_to_common_grid", {})
+    before = surface.journal.path.read_bytes()
+
+    app = FastAPI()
+    app.include_router(rest.build_router(surface))
+    document = TestClient(app).get("/api/twinapi/history?limit=5").json()
+
+    assert document["available"] is True
+    assert document["chain"] == []
+    assert [entry["eventType"] for entry in document["entries"]] == \
+        ["eda.change_planned", "eda.candidate_created"]
+    assert surface.journal.path.read_bytes() == before, "odczyt nie może ruszać strumienia"
+
+
 def test_a2a_rides_the_same_router_and_the_card_does_not_depend_on_the_request() -> None:
     """Drugi agent zapisuje kartę i wraca później — musi dostać to samo."""
     pytest.importorskip("fastapi")

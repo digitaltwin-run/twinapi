@@ -15,6 +15,7 @@ wykonanie związane tym hashem → pokwitowanie. Dzięki temu „co się stanie"
 obejrzeć przed zmianą, a „co się stało" jest zapisane niezależnie od tego, przez
 który transport przyszło żądanie.
 """
+from .journal import Journal, JournalError, evidence_for
 from .poa import PlanError, build_plan, build_process, canonical, digest
 from .registry import Handler, Registry
 from .surface import Surface, SurfaceError
@@ -22,6 +23,8 @@ from .vocabulary import Operation, Vocabulary, VocabularyError, load_vocabulary
 
 __all__ = [
     "Handler",
+    "Journal",
+    "JournalError",
     "Operation",
     "PlanError",
     "Registry",
@@ -33,6 +36,7 @@ __all__ = [
     "build_process",
     "canonical",
     "digest",
+    "evidence_for",
     "load_vocabulary",
 ]
 

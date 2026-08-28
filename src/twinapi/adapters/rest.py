@@ -42,6 +42,13 @@ def build_router(surface: Surface, prefix: str = "/api/twinapi",
     def repairs(rule: str) -> JSONResponse:
         return JSONResponse({"rule": rule, "operations": surface.repairs_for(rule)})
 
+    # Odczyt historii jest osobną drogą niż dopisywanie do niej — strumień jest
+    # tylko dopisywalny i ma taki zostać.
+    @router.get("/history")
+    def history(limit: int = 20, event_type: str | None = None,
+                source: str | None = None) -> JSONResponse:
+        return JSONResponse(surface.history(limit, event_type=event_type, source=source))
+
     @router.post("/plan/{operation}")
     def plan(operation: str, payload: dict[str, Any] = json_body) -> JSONResponse:
         try:

@@ -12,9 +12,11 @@ niespodzianką.
 """
 from __future__ import annotations
 
+from contextlib import suppress
 from datetime import UTC, datetime
 from typing import Any
 
+from .journal import Journal
 from .poa import build_plan, build_process, build_receipt, digest, verify_plan
 from .registry import Registry
 from .vocabulary import Operation, describe
@@ -28,11 +30,15 @@ class Surface:
     """Słownik + rejestr + POA. Wszystko, czego potrzebuje każdy z transportów."""
 
     def __init__(self, registry: Registry, *, target: str,
-                 subject: str = "human:operator") -> None:
+                 subject: str = "human:operator",
+                 journal: Journal | None = None) -> None:
         self.registry = registry
         self.vocabulary = registry.vocabulary
         self.target = target
         self.subject = subject
+        # Bez dziennika zmiana zostawia kandydata i żadnego śladu w historii
+        # projektu. Z dziennikiem — wpis z dowodami, niezależnie od transportu.
+        self.journal = journal
 
     # — opis —
 
@@ -58,6 +64,20 @@ class Surface:
             for item in self.vocabulary.clearing(rule_id)
         ]
 
+    def history(self, limit: int = 20, *, event_type: str | None = None,
+                source: str | None = None) -> dict[str, Any]:
+        """Historia zmian projektu wraz z oceną spójności łańcucha."""
+        if self.journal is None:
+            return {"schema_id": "twinapi.history/v1", "available": False, "entries": [],
+                    "chain": ["ten projekt nie prowadzi dziennika zmian"]}
+        return {
+            "schema_id": "twinapi.history/v1",
+            "available": True,
+            "path": str(self.journal.path),
+            "entries": self.journal.read(limit, event_type=event_type, source=source),
+            "chain": self.journal.verify(),
+        }
+
     # — plan —
 
     def plan(self, operation_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -81,6 +101,9 @@ class Surface:
                 "wykonaj ją ponownie z approved=true po obejrzeniu planu"
             )
         handler = self.registry.handler(operation.id)
+        correlation = bound["request_sha256"][:16]
+        self._record(operation, "eda.change_planned", "OBSERVED", correlation,
+                     bound["request_sha256"], mode="PLAN")
         started = datetime.now(UTC)
         try:
             output = handler(payload)
@@ -92,6 +115,10 @@ class Surface:
                 started_at=started, completed_at=completed,
                 error_code=type(exc).__name__,
             )
+            self._record(operation, "eda.change_plan_failed", "FAILED", correlation,
+                         bound["request_sha256"], severity="ERROR",
+                         code=type(exc).__name__,
+                         receipt_ref=f"sha256:{receipt['receipt_hash']}")
             raise SurfaceError(f"{operation.id}: {exc}") from _WithReceipt(receipt, exc)
         completed = datetime.now(UTC)
         receipt = build_receipt(
@@ -99,6 +126,11 @@ class Surface:
             started_at=started, completed_at=completed,
             verified=bool(output.get("verified")),
         )
+        self._record(operation, "eda.candidate_created", "SUCCEEDED", correlation,
+                     bound["request_sha256"],
+                     evidence=list(output.get("evidence") or []),
+                     receipt_ref=f"sha256:{receipt['receipt_hash']}",
+                     subject_state=str(output.get("candidate") or ""))
         return {
             "schema_id": "twinapi.result/v1",
             "operation": operation.id,
@@ -106,6 +138,27 @@ class Surface:
             "output": output,
             "receipt": receipt,
         }
+
+    def _record(self, operation: Operation, event_type: str, outcome: str,
+                correlation: str, input_hash: str, *, severity: str = "INFO",
+                mode: str = "APPLY", evidence: list | None = None,
+                code: str | None = None, receipt_ref: str | None = None,
+                subject_state: str | None = None) -> None:
+        """Dopisuje ślad do historii projektu; brak dziennika nie jest błędem.
+
+        Zapis do dziennika nie może wywrócić zmiany, która się udała: historia
+        jest świadkiem, nie warunkiem. Gdy strumień jest niedostępny, zmiana
+        zostaje, a ślad — nie, i to jest mniejsze zło niż odwrotnie.
+        """
+        if self.journal is None:
+            return
+        with suppress(Exception):  # historia jest świadkiem, nie warunkiem
+            self.journal.append(
+                event_type=event_type, outcome=outcome, severity=severity, mode=mode,
+                correlation_id=correlation, causation_id=operation.id,
+                input_hash=input_hash, evidence=evidence, code=code,
+                receipt_ref=receipt_ref, subject_state=subject_state or None,
+            )
 
     def _check_binding(self, operation: Operation, payload: dict[str, Any],
                        plan: dict[str, Any]) -> None:
