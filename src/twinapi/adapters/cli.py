@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from contextlib import suppress
 from typing import Any
 
 from ..surface import Surface, SurfaceError, receipt_of
@@ -61,6 +62,23 @@ def _payload(value: str) -> dict[str, Any]:
 
 
 def main(surface: Surface, argv: list[str] | None = None, prog: str = "twinapi") -> int:
+    """Wejście CLI. Przerwany potok kończy pracę, a nie wywraca jej wyjątkiem.
+
+    `twinctl list | head -3` zamyka stdout po trzeciej linii i bez tego kończyło
+    się śladem stosu zamiast trzema liniami — narzędzie wyglądało wtedy na
+    zepsute w najczęstszym możliwym użyciu.
+    """
+    try:
+        return _run(surface, argv, prog)
+    except BrokenPipeError:
+        # Odbiorca zamknął potok; zamykamy stdout, żeby interpreter nie zgłaszał
+        # tego drugi raz przy wyjściu.
+        with suppress(BrokenPipeError):
+            sys.stdout.close()
+        return 0
+
+
+def _run(surface: Surface, argv: list[str] | None, prog: str) -> int:
     args = build_parser(surface, prog).parse_args(argv)
     as_json = args.format == "json"
 

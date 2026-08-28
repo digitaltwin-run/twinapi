@@ -191,3 +191,20 @@ def test_a2a_rides_the_same_router_and_the_card_does_not_depend_on_the_request()
                           json={"id": "t", "action": "run",
                                 "operation": "set_track_width", "input": PAYLOAD})
     assert refused.status_code == 409
+
+
+def test_a_closed_pipe_ends_the_command_instead_of_raising(monkeypatch, capsys) -> None:
+    """`twinctl list | head -3` zamyka stdout po trzeciej linii."""
+    import io
+
+    surface = _surface()
+
+    class ClosedPipe(io.StringIO):
+        def write(self, _text):  # noqa: ANN001
+            raise BrokenPipeError(32, "Broken pipe")
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr("sys.stdout", ClosedPipe())
+    assert cli.main(surface, ["list"]) == 0
