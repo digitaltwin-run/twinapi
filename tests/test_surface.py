@@ -96,3 +96,24 @@ def test_the_surface_bridges_a_rule_to_its_repairs() -> None:
     assert by_id["set_track_width"]["implemented"] is True
     assert by_id["reroute_component_nets"]["implemented"] is False
     assert all(entry["requires_approval"] for entry in found)
+
+
+def test_the_ssot_document_carries_state_vocabulary_and_limits_together() -> None:
+    """Model potrzebuje sześciu rzeczy naraz; zbieranie ich osobno kończy się zgadywaniem."""
+    surface = _surface()
+    surface.registry.register_reporter(
+        lambda: [{"rule": "RULE_TRACK_WIDTH_BY_NET", "count": 52, "severity": "blocking"}])
+
+    document = surface.ssot(history_limit=2)
+
+    assert document["schema_id"] == "twinapi.ssot/v1"
+    assert document["state"]["findings"][0]["repairs"][0]["operation"] == "set_track_width"
+    assert set(document["request_schema"]["properties"]["operation"]["enum"]) == \
+        set(document["vocabulary"]["implemented"])
+
+
+def test_without_a_reporter_the_document_says_nothing_rather_than_guessing() -> None:
+    document = _surface().ssot()
+
+    assert document["state"]["findings"] == []
+    assert document["state"]["unrepairable"] == []

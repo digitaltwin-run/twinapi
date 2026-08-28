@@ -27,6 +27,7 @@ class Registry:
     handlers: dict[str, Handler] = field(default_factory=dict)
     gates: dict[str, Gate] = field(default_factory=dict)
     promoter: Callable[[dict[str, Any]], dict[str, Any]] | None = None
+    reporter: Callable[[], list[dict[str, Any]]] | None = None
 
     def register(self, operation_id: str, handler: Handler) -> None:
         self.vocabulary.get(operation_id)  # nieznana operacja to błąd, nie rozszerzenie
@@ -61,6 +62,14 @@ class Registry:
 
     def gate(self, name: str) -> Gate | None:
         return self.gates.get(name)
+
+    def register_reporter(self, reporter: Callable[[], list[dict[str, Any]]]) -> None:
+        """Kod, który mówi, co jest **teraz** nie tak — po nazwach reguł ze słownika.
+
+        Bez tego SSOT opisuje możliwości i milczy o stanie, a model dostaje
+        katalog czasowników zamiast obrazu projektu.
+        """
+        self.reporter = reporter
 
     def register_promoter(self, promoter: Callable[[dict[str, Any]], dict[str, Any]]) -> None:
         """Kod, który wpisuje przyjętego kandydata do projektu.

@@ -26,6 +26,9 @@ def build_parser(surface: Surface, prog: str = "twinapi") -> argparse.ArgumentPa
     repairs = sub.add_parser("repairs", help="Czym wolno zamknąć to naruszenie reguły.")
     repairs.add_argument("rule")
 
+    ssot = sub.add_parser("ssot", help="Stan, słownik i granice w jednym dokumencie dla modelu.")
+    ssot.add_argument("--history", type=int, default=10)
+
     history = sub.add_parser("history", help="Historia zmian projektu i spójność łańcucha.")
     history.add_argument("--limit", type=int, default=15)
     history.add_argument("--event-type")
@@ -90,6 +93,11 @@ def main(surface: Surface, argv: list[str] | None = None, prog: str = "twinapi")
         for entry in found:
             mark = "✔" if entry["implemented"] else "·"
             print(f"  {mark} {entry['operation']}: {entry['why']}")
+        return 0
+
+    if args.command == "ssot":
+        # Dokument dla modelu ma sens tylko jako JSON — `--format text` go nie zmienia.
+        print(json.dumps(surface.ssot(args.history), ensure_ascii=False, indent=2))
         return 0
 
     if args.command == "history":

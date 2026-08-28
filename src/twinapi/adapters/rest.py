@@ -44,6 +44,12 @@ def build_router(surface: Surface, prefix: str = "/api/twinapi",
 
     # Odczyt historii jest osobną drogą niż dopisywanie do niej — strumień jest
     # tylko dopisywalny i ma taki zostać.
+    # Jedno wywołanie daje modelowi stan, słownik i granice naraz. Zbieranie tego
+    # z sześciu endpointów kończy się tym, że model zgaduje brakującą część.
+    @router.get("/ssot")
+    def ssot(history: int = 10) -> JSONResponse:
+        return JSONResponse(surface.ssot(history))
+
     @router.get("/history")
     def history(limit: int = 20, event_type: str | None = None,
                 source: str | None = None) -> JSONResponse:

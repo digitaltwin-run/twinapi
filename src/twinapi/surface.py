@@ -78,6 +78,12 @@ class Surface:
             "chain": self.journal.verify(),
         }
 
+    def ssot(self, history_limit: int = 10) -> dict[str, Any]:
+        """Stan, słownik i granice w jednym dokumencie — wejście dla modelu."""
+        from .ssot import build
+
+        return build(self, history_limit=history_limit)
+
     # — plan —
 
     def plan(self, operation_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:

@@ -50,6 +50,12 @@ def list_tools(surface: Surface) -> list[dict[str, Any]]:
             "additionalProperties": False,
         },
     }]
+    tools.append({
+        "name": "twinapi_ssot",
+        "description": ("Stan projektu, słownik dozwolonych zmian, bramki i historia "
+                        "w jednym dokumencie — razem ze schematem odpowiedzi."),
+        "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+    })
     for operation in surface.vocabulary:
         if operation.id not in surface.registry.handlers:
             continue
@@ -69,6 +75,8 @@ def call_tool(surface: Surface, name: str, arguments: dict[str, Any] | None = No
     try:
         if name == "twinapi_list":
             return {"isError": False, "content": surface.describe()}
+        if name == "twinapi_ssot":
+            return {"isError": False, "content": surface.ssot()}
         if name == "twinapi_plan":
             return {"isError": False,
                     "content": surface.plan(arguments["operation"], arguments.get("input") or {})}

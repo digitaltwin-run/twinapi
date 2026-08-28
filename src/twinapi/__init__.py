@@ -19,6 +19,7 @@ from .journal import Journal, JournalError, evidence_for
 from .poa import PlanError, build_plan, build_process, canonical, digest
 from .processes import ProcessError, bind, load_processes, routing
 from .registry import Handler, Registry
+from .ssot import request_schema
 from .surface import Surface, SurfaceError
 from .vocabulary import Operation, Vocabulary, VocabularyError, load_vocabulary
 
@@ -42,6 +43,7 @@ __all__ = [
     "evidence_for",
     "load_processes",
     "load_vocabulary",
+    "request_schema",
     "routing",
 ]
 
