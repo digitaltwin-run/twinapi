@@ -50,13 +50,20 @@ def test_changing_the_bill_of_materials_reaches_outside_the_project() -> None:
     assert adding.requires_approval and not adding.reversible
 
 
+def test_placement_requires_the_same_explicit_approval_as_copper() -> None:
+    vocabulary = load_vocabulary("pcb")
+
+    assert vocabulary.get("move").requires_approval is True
+    assert vocabulary.get("optimize_placement_and_routing").requires_approval is True
+
+
 def test_the_vocabulary_bridges_a_violation_to_its_repairs() -> None:
     vocabulary = load_vocabulary("pcb", "sch")
 
     repairs = {item.id for item in vocabulary.clearing("RULE_SILK_OVER_PAD")}
     assert repairs == {"trim_silkscreen"}
     assert {item.id for item in vocabulary.clearing("RULE_SCH_COMMON_GRID")} == \
-        {"snap_to_common_grid"}
+        {"move_symbol", "snap_to_common_grid"}
 
 
 def test_the_description_is_json_serialisable_for_every_transport() -> None:

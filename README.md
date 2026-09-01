@@ -57,7 +57,7 @@ obiecuje.
 
 ## Zgoda nie jest uprzejmością warstwy wyżej
 
-Operacja, która rusza miedź, netlistę albo listę elementów, wymaga `approved`.
+Operacja, która rusza miedź, placement, netlistę albo listę elementów, wymaga `approved`.
 Wynika to ze słownika, nie z adaptera — więc model przez MCP ma dokładnie tę
 samą barierę, co człowiek w powłoce.
 

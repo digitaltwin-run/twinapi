@@ -63,8 +63,10 @@ class Operation:
 
     @property
     def requires_approval(self) -> bool:
-        """Nieodwracalne i dotykające miedzi wymagają zgody człowieka."""
-        return not self.reversible or self.changes in {"copper", "bom", "netlist"}
+        """Nieodwracalne i elektrycznie/fizycznie istotne zmiany wymagają zgody."""
+        return not self.reversible or self.changes in {
+            "copper", "placement", "bom", "netlist",
+        }
 
 
 @dataclass(frozen=True)
